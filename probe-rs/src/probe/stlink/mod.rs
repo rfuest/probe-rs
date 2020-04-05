@@ -171,8 +171,7 @@ impl DebugProbe for STLink<STLinkUSBDevice> {
             TIMEOUT,
         )?;
 
-        Self::check_status(&buf)?;
-        Ok(())
+        Self::check_status(&buf)
     }
 
     fn target_reset_assert(&mut self) -> Result<(), DebugProbeError> {
@@ -188,8 +187,7 @@ impl DebugProbe for STLink<STLinkUSBDevice> {
             TIMEOUT,
         )?;
 
-        Self::check_status(&buf)?;
-        Ok(())
+        Self::check_status(&buf)
     }
 
     fn target_reset_deassert(&mut self) -> Result<(), DebugProbeError> {
@@ -205,8 +203,7 @@ impl DebugProbe for STLink<STLinkUSBDevice> {
             TIMEOUT,
         )?;
 
-        Self::check_status(&buf)?;
-        Ok(())
+        Self::check_status(&buf)
     }
 
     fn select_protocol(&mut self, protocol: WireProtocol) -> Result<(), DebugProbeError> {
@@ -497,8 +494,7 @@ impl<D: StLinkUsb> STLink<D> {
             &mut buf,
             TIMEOUT,
         )?;
-        Self::check_status(&buf)?;
-        Ok(())
+        Self::check_status(&buf)
     }
 
     /// Sets the JTAG frequency.
@@ -517,8 +513,7 @@ impl<D: StLinkUsb> STLink<D> {
             &mut buf,
             TIMEOUT,
         )?;
-        Self::check_status(&buf)?;
-        Ok(())
+        Self::check_status(&buf)
     }
 
     /// Sets the communication frequency (V3 only)
@@ -647,12 +642,11 @@ impl<D: StLinkUsb> STLink<D> {
     /// Returns an error if the status is not `Status::JtagOk`.
     /// Returns Ok(()) otherwise.
     /// This can be called on any status returned from the attached target.
-    fn check_status(status: &[u8]) -> Result<(), StlinkError> {
-        log::trace!("check_status({:?})", status);
+    fn check_status(status: &[u8]) -> Result<(), DebugProbeError> {
         let status = Status::from(status[0]);
         if status != Status::JtagOk {
             log::warn!("check_status failed: {:?}", status);
-            Err(StlinkError::CommandFailed(status))
+            Err(From::from(StlinkError::CommandFailed(status)))
         } else {
             Ok(())
         }
