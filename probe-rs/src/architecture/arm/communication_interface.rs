@@ -12,7 +12,8 @@ use super::{
 };
 use crate::config::ChipInfo;
 use crate::{
-    CommunicationInterface, DebugProbe, DebugProbeError, Error as ProbeRsError, Memory, Probe,
+    probe::AttachMethod, CommunicationInterface, DebugProbe, DebugProbeError,
+    Error as ProbeRsError, Memory, Probe,
 };
 use jep106::JEP106Code;
 use thiserror::Error;
@@ -119,6 +120,8 @@ pub trait DAPAccess: DebugProbe {
 pub struct ArmCommunicationInterfaceState {
     initialized: bool,
 
+    attach_method: AttachMethod,
+
     debug_port_version: DebugPortVersion,
 
     current_dpbanksel: u8,
@@ -128,9 +131,10 @@ pub struct ArmCommunicationInterfaceState {
 }
 
 impl ArmCommunicationInterfaceState {
-    pub fn new() -> Self {
+    pub fn new(attach_method: AttachMethod) -> Self {
         Self {
             initialized: false,
+            attach_method,
             debug_port_version: DebugPortVersion::Unsupported(0xFF),
             current_dpbanksel: 0,
             current_apsel: 0,
@@ -169,14 +173,43 @@ impl<'probe> ArmCommunicationInterface<'probe> {
         state: &'probe mut ArmCommunicationInterfaceState,
     ) -> Result<Option<Self>, DebugProbeError> {
         if probe.has_dap_interface() {
-            let mut s = Self { probe, state };
+            let mut interface = Self { probe, state };
 
-            if !s.state.initialized() {
-                s.enter_debug_mode()?;
-                s.state.initialize();
+            if !interface.state.initialized() {
+                if interface.state.attach_method == AttachMethod::UnderReset {
+                    // we need to halt the chip here
+
+                    {
+                        use crate::architecture::arm::core::m4::{Demcr, Dhcsr};
+                        use crate::core::CoreRegister;
+
+                        let mut memory = ADIMemoryInterface::<ArmCommunicationInterface>::new(
+                            interface.reborrow(),
+                            0,
+                        )
+                        .unwrap();
+
+                        let mut dhcsr = Dhcsr(0);
+                        dhcsr.set_c_halt(true);
+                        dhcsr.set_c_debugen(true);
+                        dhcsr.enable_write();
+
+                        memory.write_word_32(Dhcsr::ADDRESS, dhcsr.into()).unwrap();
+
+                        let mut demcr = Demcr(0);
+                        demcr.set_vc_corereset(true);
+
+                        memory.write_word_32(Demcr::ADDRESS, demcr.into()).unwrap();
+                    }
+
+                    interface.probe.target_reset_deassert().unwrap();
+                }
+
+                interface.enter_debug_mode()?;
+                interface.state.initialize();
             }
 
-            Ok(Some(s))
+            Ok(Some(interface))
         } else {
             log::debug!("No DAP interface available on Probe");
 
